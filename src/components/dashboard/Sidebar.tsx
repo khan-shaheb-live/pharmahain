@@ -59,6 +59,7 @@ export const Sidebar: React.FC = () => {
           ...common,
           { name: "Stock Inventory", path: "/batches", icon: <Layers className="h-5 w-5" /> },
           { name: "Receiving Transfers", path: "/transfers", icon: <ArrowLeftRight className="h-5 w-5" /> },
+          { name: "Ledger Explorer", path: "/explorer", icon: <Cpu className="h-5 w-5" /> },
           { name: "Verify Customer", path: "/verify", icon: <QrCode className="h-5 w-5" /> }
         ];
       default:
