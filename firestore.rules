@@ -1,0 +1,13 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Developer Sandbox Rules:
+    // Allows full read and write access on all collections so that database seeding, 
+    // registration, and public barcode verifications can execute without authentication conflicts.
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
