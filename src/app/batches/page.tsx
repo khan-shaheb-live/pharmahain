@@ -18,7 +18,8 @@ import {
   Activity,
   ArrowLeft,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  ClipboardCheck
 } from "lucide-react";
 
 export default function BatchesList() {
@@ -32,6 +33,16 @@ export default function BatchesList() {
   // Sidebar filter states
   const [selectedIndications, setSelectedIndications] = useState<string[]>([]);
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
+
+  // Transfer states
+  const [activeTransferBatch, setActiveTransferBatch] = useState<MedicineBatch | null>(null);
+  const [selectedRecipientId, setSelectedRecipientId] = useState("");
+  const [transferNotes, setTransferNotes] = useState("");
+  const [transferPrice, setTransferPrice] = useState<number>(0);
+  const [transferring, setTransferring] = useState(false);
+  const [transferSuccess, setTransferSuccess] = useState(false);
+  const [distributors, setDistributors] = useState<any[]>([]);
+  const [pharmacies, setPharmacies] = useState<any[]>([]);
 
   const FILTER_INDICATIONS = [
     "Pain Relief",
@@ -74,6 +85,16 @@ export default function BatchesList() {
         }
         setBatches(all);
         setFiltered(all);
+
+        // Fetch recipients
+        if (user) {
+          const allUsers = await dbService.getAllUsers();
+          if (user.role === "Manufacturer") {
+            setDistributors(allUsers.filter((u) => u.role === "Distributor"));
+          } else if (user.role === "Distributor") {
+            setPharmacies(allUsers.filter((u) => u.role === "Pharmacy"));
+          }
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -82,6 +103,49 @@ export default function BatchesList() {
     };
     loadBatches();
   }, [user]);
+
+  const handleOpenTransferModal = (batch: MedicineBatch) => {
+    setActiveTransferBatch(batch);
+    setTransferSuccess(false);
+    setTransferNotes("");
+    setTransferPrice(batch.wholesalePrice || 1.75);
+    setSelectedRecipientId("");
+  };
+
+  const handleInitiateTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTransferBatch || !selectedRecipientId || transferring || !user) return;
+
+    setTransferring(true);
+    try {
+      const blockchainTxHash = "0x" + Array.from({ length: 64 }, () => 
+        Math.floor(Math.random() * 16).toString(16)
+      ).join("");
+
+      await dbService.initiateTransfer(
+        activeTransferBatch.batchId,
+        selectedRecipientId,
+        transferNotes,
+        blockchainTxHash,
+        transferPrice
+      );
+
+      // Refresh list
+      const refreshed = await dbService.getBatchesByRole(user.uid, user.role);
+      setBatches(refreshed);
+
+      setTransferSuccess(true);
+      setTimeout(() => {
+        setActiveTransferBatch(null);
+        setTransferSuccess(false);
+      }, 2000);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Failed to initiate transfer.");
+    } finally {
+      setTransferring(false);
+    }
+  };
 
   useEffect(() => {
     let list = batches;
@@ -344,13 +408,23 @@ export default function BatchesList() {
                         <p className="text-slate-400 text-[10px]">Registry Quantity</p>
                         <p className="font-extrabold text-slate-800 dark:text-slate-200">{b.quantity.toLocaleString()} units</p>
                       </div>
-                      <Link
-                        href={`/batches/${b.batchId}`}
-                        className="inline-flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md shadow-blue-500/10"
-                      >
-                        Trace Path
-                        <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                      </Link>
+                      <div className="flex items-center space-x-2">
+                        {user && b.currentOwnerId === user.uid && b.status !== "In Transit" && (user.role === "Manufacturer" || user.role === "Distributor") && (
+                          <button
+                            onClick={() => handleOpenTransferModal(b)}
+                            className="inline-flex items-center px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-all shadow-md shadow-amber-500/10 cursor-pointer"
+                          >
+                            Ship / Transfer
+                          </button>
+                        )}
+                        <Link
+                          href={`/batches/${b.batchId}`}
+                          className="inline-flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md shadow-blue-500/10"
+                        >
+                          Trace Path
+                          <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -364,6 +438,118 @@ export default function BatchesList() {
                   Try clearing sidebar criteria or searching for general active ingredients.
                 </p>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Transfer modal overlay */}
+      {activeTransferBatch && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md glass-card p-6 rounded-2xl border border-card-border shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            
+            <div className="flex justify-between items-center border-b border-card-border/50 pb-3">
+              <h3 className="font-outfit text-sm font-bold text-slate-900 dark:text-white flex items-center">
+                <Layers className="h-4.5 w-4.5 text-blue-500 mr-2" />
+                Dispatch Logistics Handover
+              </h3>
+              <button
+                onClick={() => setActiveTransferBatch(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {transferSuccess ? (
+              <div className="text-center py-8 space-y-3">
+                <div className="h-12 w-12 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 inline-flex items-center justify-center">
+                  <ClipboardCheck className="h-6 w-6 animate-bounce" />
+                </div>
+                <h4 className="font-outfit text-md font-bold text-slate-900 dark:text-white">Shipment Dispatched!</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Cryptographic transfer transaction logged in block. Transit state is active.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleInitiateTransfer} className="space-y-4">
+                <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 text-xs space-y-1">
+                  <p className="text-slate-400">Medicine Batch Selected</p>
+                  <p className="font-bold text-slate-900 dark:text-white">{activeTransferBatch.medicineName}</p>
+                  <p className="font-mono text-[10px] text-slate-400">ID: {activeTransferBatch.batchId}</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Select Destination Partner *
+                  </label>
+                  <select
+                    required
+                    value={selectedRecipientId}
+                    onChange={(e) => setSelectedRecipientId(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                  >
+                    <option value="">-- Select Partner --</option>
+                    {user?.role === "Manufacturer" ? (
+                      distributors.length > 0 ? (
+                        distributors.map((d) => (
+                          <option key={d.uid} value={d.uid}>
+                            {d.organizationName || d.name} (Distributor)
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No active logistics partners registered</option>
+                      )
+                    ) : (
+                      pharmacies.length > 0 ? (
+                        pharmacies.map((p) => (
+                          <option key={p.uid} value={p.uid}>
+                            {p.organizationName || p.name} (Pharmacy)
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No active pharmacies registered</option>
+                      )
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Wholesale Transaction Price ($ / unit) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0.01}
+                    step="0.01"
+                    value={transferPrice}
+                    onChange={(e) => setTransferPrice(parseFloat(e.target.value))}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Shipment Criteria / Logistics Notes
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Enter dispatch Courier info or climate conditions (e.g. Courier: MedExpress Courier, cold ice secure box 14)"
+                    value={transferNotes}
+                    onChange={(e) => setTransferNotes(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={transferring || !selectedRecipientId}
+                  className="w-full inline-flex items-center justify-center px-4 py-3 text-xs font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {transferring ? "Signing Transaction..." : "Initiate Secure Dispatch Handover"}
+                </button>
+              </form>
             )}
           </div>
         </div>

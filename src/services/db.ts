@@ -47,6 +47,7 @@ export interface MedicineBatch {
   barcodeBase64?: string;
   ingredients?: string;
   indications?: string;
+  ingredientPercentages?: Array<{ name: string; percentage: number }>;
   currentOwnerId: string;
   currentOwnerName: string;
   status: BatchStatus;
@@ -55,6 +56,8 @@ export interface MedicineBatch {
   distributorName?: string;
   pharmacyId?: string;
   pharmacyName?: string;
+  wholesalePrice?: number;
+  retailPrice?: number;
 }
 
 export interface OwnershipTransfer {
@@ -69,6 +72,20 @@ export interface OwnershipTransfer {
   blockchainTxHash: string;
   status: "Pending" | "Accepted" | "Rejected";
   notes?: string;
+  wholesalePrice?: number;
+}
+
+export interface POSSale {
+  saleId: string;
+  batchId: string;
+  medicineName: string;
+  pharmacyId: string;
+  pharmacyName: string;
+  customerName: string;
+  quantity: number;
+  retailUnitPrice: number;
+  totalPrice: number;
+  saleDate: string;
 }
 
 export interface QRVerification {
@@ -201,7 +218,7 @@ export const dbService = {
   // MEDICINE BATCHES METHODS
   // ==========================================
 
-  async createBatch(batchData: Omit<MedicineBatch, "qrCodeUrl" | "currentOwnerId" | "currentOwnerName" | "status" | "createdAt">): Promise<MedicineBatch> {
+  async createBatch(batchData: Omit<MedicineBatch, "qrCodeUrl" | "currentOwnerId" | "currentOwnerName" | "status" | "createdAt"> & { wholesalePrice?: number }): Promise<MedicineBatch> {
     const defaultData = {
       currentOwnerId: batchData.manufacturerId,
       currentOwnerName: batchData.manufacturerName,
@@ -212,7 +229,8 @@ export const dbService = {
 
     const newBatch: MedicineBatch = {
       ...batchData,
-      ...defaultData
+      ...defaultData,
+      wholesalePrice: batchData.wholesalePrice || 0
     };
 
     newBatch.qrCodeUrl = `/verify?batchId=${encodeURIComponent(newBatch.batchId)}`;
@@ -256,7 +274,8 @@ export const dbService = {
     batchId: string, 
     toUserId: string, 
     notes: string, 
-    blockchainTxHash: string
+    blockchainTxHash: string,
+    wholesalePrice?: number
   ): Promise<OwnershipTransfer> {
     const batch = await this.getBatch(batchId);
     if (!batch) throw new Error("Batch not found.");
@@ -277,7 +296,8 @@ export const dbService = {
       transferDate: new Date().toISOString(),
       blockchainTxHash,
       status: "Pending",
-      notes
+      notes,
+      wholesalePrice: wholesalePrice || 0
     };
 
     // 1. Save Transfer Doc
@@ -285,19 +305,20 @@ export const dbService = {
     
     // 2. Update Batch Assignee/Status in Firestore
     const batchRef = doc(db, "medicine_batches", batchId);
+    const updateData: any = {
+      status: "In Transit",
+      wholesalePrice: wholesalePrice || batch.wholesalePrice || 0
+    };
+
     if (toUser.role === "Distributor") {
-      await updateDoc(batchRef, {
-        distributorId: toUser.uid,
-        distributorName: toUser.organizationName || toUser.name,
-        status: "In Transit"
-      });
+      updateData.distributorId = toUser.uid;
+      updateData.distributorName = toUser.organizationName || toUser.name;
     } else if (toUser.role === "Pharmacy") {
-      await updateDoc(batchRef, {
-        pharmacyId: toUser.uid,
-        pharmacyName: toUser.organizationName || toUser.name,
-        status: "In Transit"
-      });
+      updateData.pharmacyId = toUser.uid;
+      updateData.pharmacyName = toUser.organizationName || toUser.name;
     }
+
+    await updateDoc(batchRef, updateData);
     
     return newTransfer;
   },
@@ -425,6 +446,47 @@ export const dbService = {
   },
 
   // ==========================================
+  // PHARMACY B2C POS SALES METHODS
+  // ==========================================
+
+  async registerPOSSale(saleData: Omit<POSSale, "saleId" | "saleDate" | "totalPrice">): Promise<POSSale> {
+    const batch = await this.getBatch(saleData.batchId);
+    if (!batch) throw new Error("Batch not found.");
+    if (batch.quantity < saleData.quantity) {
+      throw new Error(`Insufficient stock. Only ${batch.quantity} units available.`);
+    }
+
+    const saleId = "SALE_" + Math.random().toString(36).substring(2, 11);
+    const totalPrice = Number((saleData.quantity * saleData.retailUnitPrice).toFixed(2));
+    const newSale: POSSale = {
+      ...saleData,
+      saleId,
+      totalPrice,
+      saleDate: new Date().toISOString()
+    };
+
+    // 1. Save Sale Doc
+    await setDoc(doc(db, "pos_sales", saleId), newSale);
+
+    // 2. Decrement Batch stock
+    const batchRef = doc(db, "medicine_batches", saleData.batchId);
+    await updateDoc(batchRef, {
+      quantity: batch.quantity - saleData.quantity,
+      retailPrice: saleData.retailUnitPrice
+    });
+
+    return newSale;
+  },
+
+  async getSalesForPharmacy(pharmacyId: string): Promise<POSSale[]> {
+    const q = query(collection(db, "pos_sales"), where("pharmacyId", "==", pharmacyId));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data() as POSSale).sort(
+      (a, b) => new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime()
+    );
+  },
+
+  // ==========================================
   // BULK DATABASE SEED METHOD
   // ==========================================
 
@@ -512,6 +574,46 @@ export const dbService = {
 
     // 2. Seed Batches
     const SEED_BATCHES_MOCK: MedicineBatch[] = [
+      {
+        batchId: "BAT-77382-PZ",
+        medicineName: "Amoxicillin Trihydrate 500mg",
+        manufacturerName: "Pfizer Laboratories Inc.",
+        manufacturerId: mfgId,
+        manufactureDate: "2026-04-05",
+        expiryDate: "2029-04-05",
+        quantity: 25000,
+        blockchainHash: "0x98f654b121fb6589a1b1bda1bda7ee72f91bf97aef4a52e8fa3f80c6be4b84b6",
+        qrCodeUrl: `/verify?batchId=BAT-77382-PZ`,
+        ingredients: "Amoxicillin Trihydrate, Magnesium Stearate",
+        indications: "Bacterial Infections",
+        currentOwnerId: pharmId,
+        currentOwnerName: "Walgreens Care Pharmacies",
+        status: "Delivered",
+        createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+        distributorId: distId,
+        distributorName: "MedExpress Logistics Ltd.",
+        pharmacyId: pharmId,
+        pharmacyName: "Walgreens Care Pharmacies"
+      },
+      {
+        batchId: "BAT-55421-MD",
+        medicineName: "Lisinopril 10mg Tablets",
+        manufacturerName: "Pfizer Laboratories Inc.",
+        manufacturerId: mfgId,
+        manufactureDate: "2026-04-12",
+        expiryDate: "2029-04-12",
+        quantity: 15000,
+        blockchainHash: "0x21fb6589a1b1bda1bda7ee72f91bf97a22e831034d58ba25f829cc73595b121",
+        qrCodeUrl: `/verify?batchId=BAT-55421-MD`,
+        ingredients: "Lisinopril Dihydrate",
+        indications: "High Blood Pressure",
+        currentOwnerId: distId,
+        currentOwnerName: "MedExpress Logistics Ltd.",
+        status: "In Transit",
+        createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+        distributorId: distId,
+        distributorName: "MedExpress Logistics Ltd."
+      },
       {
         batchId: "BAT-NAPA-201",
         medicineName: "Napa 500mg (Paracetamol)",
@@ -801,6 +903,66 @@ export const dbService = {
 
     for (const b of SEED_BATCHES_MOCK) {
       b.barcodeBase64 = generateBarcodeBase64(b.batchId);
+      if (b.batchId.includes("NAPA")) {
+        b.wholesalePrice = 1.20;
+        b.ingredientPercentages = [{ name: "Paracetamol", percentage: 100 }];
+      } else if (b.batchId.includes("ACE")) {
+        b.wholesalePrice = 1.10;
+        b.ingredientPercentages = [{ name: "Paracetamol", percentage: 100 }];
+      } else if (b.batchId.includes("SECLO")) {
+        b.wholesalePrice = 2.40;
+        b.ingredientPercentages = [{ name: "Omeprazole", percentage: 100 }];
+      } else if (b.batchId.includes("SERGEL")) {
+        b.wholesalePrice = 3.50;
+        b.ingredientPercentages = [{ name: "Esomeprazole", percentage: 100 }];
+      } else if (b.batchId.includes("PANTO")) {
+        b.wholesalePrice = 2.80;
+        b.ingredientPercentages = [{ name: "Pantoprazole", percentage: 100 }];
+      } else if (b.batchId.includes("CEF3")) {
+        b.wholesalePrice = 4.50;
+        b.ingredientPercentages = [{ name: "Cefixime", percentage: 100 }];
+      } else if (b.batchId.includes("ZIMAX")) {
+        b.wholesalePrice = 6.00;
+        b.ingredientPercentages = [{ name: "Azithromycin", percentage: 100 }];
+      } else if (b.batchId.includes("ALAT")) {
+        b.wholesalePrice = 1.50;
+        b.ingredientPercentages = [{ name: "Cetirizine", percentage: 100 }];
+      } else if (b.batchId.includes("FEXO")) {
+        b.wholesalePrice = 2.20;
+        b.ingredientPercentages = [{ name: "Fexofenadine", percentage: 100 }];
+      } else if (b.batchId.includes("COMET")) {
+        b.wholesalePrice = 1.80;
+        b.ingredientPercentages = [{ name: "Metformin", percentage: 100 }];
+      } else if (b.batchId.includes("LOSR")) {
+        b.wholesalePrice = 3.20;
+        b.ingredientPercentages = [{ name: "Losartan", percentage: 90 }, { name: "Hydrochlorothiazide", percentage: 10 }];
+      } else if (b.batchId.includes("ECOS")) {
+        b.wholesalePrice = 0.80;
+        b.ingredientPercentages = [{ name: "Aspirin", percentage: 100 }];
+      } else if (b.batchId.includes("MONT")) {
+        b.wholesalePrice = 3.00;
+        b.ingredientPercentages = [{ name: "Montelukast", percentage: 100 }];
+      } else if (b.batchId.includes("CALB")) {
+        b.wholesalePrice = 2.00;
+        b.ingredientPercentages = [{ name: "Calcium Carbonate", percentage: 80 }, { name: "Vitamin D3", percentage: 20 }];
+      } else if (b.batchId.includes("77382")) {
+        b.wholesalePrice = 1.50;
+        b.ingredientPercentages = [{ name: "Amoxicillin Trihydrate", percentage: 95 }, { name: "Magnesium Stearate", percentage: 5 }];
+      } else if (b.batchId.includes("55421")) {
+        b.wholesalePrice = 2.10;
+        b.ingredientPercentages = [{ name: "Lisinopril Dihydrate", percentage: 100 }];
+      } else if (b.batchId.includes("NERV")) {
+        b.wholesalePrice = 5.50;
+        b.ingredientPercentages = [{ name: "Pregabalin", percentage: 100 }];
+      } else {
+        b.wholesalePrice = 1.50;
+        b.ingredientPercentages = [{ name: "Active Agent", percentage: 100 }];
+      }
+
+      if (b.status === "Delivered") {
+        b.retailPrice = Number((b.wholesalePrice * 1.3).toFixed(2));
+      }
+
       await setDoc(doc(db, "medicine_batches", b.batchId), b);
     }
 
@@ -817,7 +979,8 @@ export const dbService = {
         transferDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
         blockchainTxHash: "0x98f654b121fb6589a1b1bda1bda7ee72f91bf97aef4a52e8fa3f80c6be4b84b6",
         status: "Accepted",
-        notes: "Shipped in cold container. Temp: 4C."
+        notes: "Shipped in cold container. Temp: 4C.",
+        wholesalePrice: 1.50
       },
       {
         transferId: "TX-9902-AM",
@@ -830,7 +993,8 @@ export const dbService = {
         transferDate: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
         blockchainTxHash: "0x43bda7ee72f91bf97aef4a52e8fa3f80c6be4b84b655da92bd121f158914b1bda",
         status: "Accepted",
-        notes: "Delivered to pharmacy hub. Secure packaging intact."
+        notes: "Delivered to pharmacy hub. Secure packaging intact.",
+        wholesalePrice: 1.75
       },
       {
         transferId: "TX-9903-AM",
@@ -843,7 +1007,8 @@ export const dbService = {
         transferDate: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
         blockchainTxHash: "0x21fb6589a1b1bda1bda7ee72f91bf97aef4a22e831034d58ba25f829cc73595b1",
         status: "Accepted",
-        notes: "Assigned for standard dispatch."
+        notes: "Assigned for standard dispatch.",
+        wholesalePrice: 2.10
       }
     ];
 
@@ -887,6 +1052,50 @@ export const dbService = {
 
     for (const v of SEED_VERIFICATIONS_MOCK) {
       await setDoc(doc(db, "qr_verifications", v.verificationId), v);
+    }
+
+    // 5. Seed B2C POS Sales
+    const SEED_POS_SALES_MOCK: POSSale[] = [
+      {
+        saleId: "SALE-101",
+        batchId: "BAT-NAPA-201",
+        medicineName: "Napa 500mg (Paracetamol)",
+        pharmacyId: pharmId,
+        pharmacyName: "Walgreens Care Pharmacies",
+        customerName: "Alice Smith",
+        quantity: 120,
+        retailUnitPrice: 1.60,
+        totalPrice: 192.00,
+        saleDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+      },
+      {
+        saleId: "SALE-102",
+        batchId: "BAT-ACE-302",
+        medicineName: "Ace 500mg (Paracetamol)",
+        pharmacyId: pharmId,
+        pharmacyName: "Walgreens Care Pharmacies",
+        customerName: "Bob Jones",
+        quantity: 80,
+        retailUnitPrice: 1.45,
+        totalPrice: 116.00,
+        saleDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
+      },
+      {
+        saleId: "SALE-103",
+        batchId: "BAT-SECLO-401",
+        medicineName: "Seclo 20mg (Omeprazole)",
+        pharmacyId: pharmId,
+        pharmacyName: "Walgreens Care Pharmacies",
+        customerName: "Charlie Brown",
+        quantity: 50,
+        retailUnitPrice: 3.10,
+        totalPrice: 155.00,
+        saleDate: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+      }
+    ];
+
+    for (const s of SEED_POS_SALES_MOCK) {
+      await setDoc(doc(db, "pos_sales", s.saleId), s);
     }
 
     return "Database seeded successfully!";

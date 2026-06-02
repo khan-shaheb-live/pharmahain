@@ -224,17 +224,50 @@ export default function BatchDetails({ params }: PageProps) {
                   {batch.expiryDate}
                 </span>
               </div>
+
+              <div className="space-y-1">
+                <span className="text-slate-400 font-semibold uppercase tracking-wider block">Wholesale Price (Paid)</span>
+                <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center">
+                  {batch.wholesalePrice ? `$${batch.wholesalePrice.toFixed(2)}` : "N/A"}
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-slate-400 font-semibold uppercase tracking-wider block">B2C Retail Price</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center">
+                  {batch.retailPrice ? `$${batch.retailPrice.toFixed(2)}` : batch.wholesalePrice ? `$${(batch.wholesalePrice * 1.3).toFixed(2)} (Suggested)` : "N/A"}
+                </span>
+              </div>
             </div>
 
             {/* Ingredients & Indications */}
             {(batch.ingredients || batch.indications) && (
               <div className="pt-4 border-t border-card-border/30 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                {batch.ingredients && (
-                  <div className="space-y-1">
-                    <span className="text-slate-400 font-semibold uppercase tracking-wider block">Active Ingredients</span>
-                    <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-semibold bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-900">
-                      {batch.ingredients}
-                    </p>
+                {(batch.ingredients || batch.ingredientPercentages) && (
+                  <div className="space-y-2">
+                    <span className="text-slate-400 font-semibold uppercase tracking-wider block">Active Ingredients & Concentrations</span>
+                    {batch.ingredientPercentages && batch.ingredientPercentages.length > 0 ? (
+                      <div className="space-y-2 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        {batch.ingredientPercentages.map((ing, idx) => (
+                          <div key={idx} className="space-y-1">
+                            <div className="flex justify-between font-semibold text-[11px]">
+                              <span className="text-slate-700 dark:text-slate-300">{ing.name}</span>
+                              <span className="text-blue-500 font-bold">{ing.percentage}%</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-blue-500 rounded-full"
+                                style={{ width: `${ing.percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-semibold bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-900">
+                        {batch.ingredients}
+                      </p>
+                    )}
                   </div>
                 )}
                 {batch.indications && (

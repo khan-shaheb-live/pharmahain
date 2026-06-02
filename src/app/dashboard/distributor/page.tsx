@@ -28,6 +28,7 @@ export default function DistributorDashboard() {
   const [activeTransferBatch, setActiveTransferBatch] = useState<MedicineBatch | null>(null);
   const [selectedPharmacyId, setSelectedPharmacyId] = useState("");
   const [transferNotes, setTransferNotes] = useState("");
+  const [transferPrice, setTransferPrice] = useState<number>(0);
   const [transferring, setTransferring] = useState(false);
   const [transferSuccess, setTransferSuccess] = useState(false);
 
@@ -94,6 +95,7 @@ export default function DistributorDashboard() {
     setActiveTransferBatch(batch);
     setTransferSuccess(false);
     setTransferNotes("");
+    setTransferPrice(batch.wholesalePrice || 1.75);
   };
 
   const handleInitiateTransfer = async (e: React.FormEvent) => {
@@ -117,7 +119,8 @@ export default function DistributorDashboard() {
         activeTransferBatch.batchId,
         selectedPharmacyId,
         transferNotes,
-        blockchainTxHash
+        blockchainTxHash,
+        transferPrice
       );
 
       // Refresh dashboard batches list
@@ -222,6 +225,7 @@ export default function DistributorDashboard() {
                 <th className="px-6 py-3.5">Batch ID</th>
                 <th className="px-6 py-3.5">Medicine Name</th>
                 <th className="px-6 py-3.5">Current Custodian</th>
+                <th className="px-6 py-3.5">Wholesale Price</th>
                 <th className="px-6 py-3.5">Status</th>
                 <th className="px-6 py-3.5">Actions</th>
               </tr>
@@ -246,6 +250,9 @@ export default function DistributorDashboard() {
                           <Building className="h-3.5 w-3.5 text-slate-400" />
                           <span>{b.currentOwnerName}</span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 font-bold text-blue-600 dark:text-blue-400">
+                        {b.wholesalePrice ? `$${b.wholesalePrice.toFixed(2)}` : "N/A"}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
@@ -354,6 +361,21 @@ export default function DistributorDashboard() {
                       <option value="">No registered pharmacies available</option>
                     )}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Wholesale Transaction Price ($ / unit) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0.01}
+                    step="0.01"
+                    value={transferPrice}
+                    onChange={(e) => setTransferPrice(parseFloat(e.target.value))}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                  />
                 </div>
 
                 <div>

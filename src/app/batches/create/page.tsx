@@ -16,7 +16,9 @@ import {
   Cpu, 
   QrCode,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Plus,
+  Trash2
 } from "lucide-react";
 
 export default function CreateBatch() {
@@ -29,7 +31,10 @@ export default function CreateBatch() {
   const [manufactureDate, setManufactureDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [quantity, setQuantity] = useState<number>(1000);
-  const [ingredients, setIngredients] = useState("");
+  const [wholesalePrice, setWholesalePrice] = useState<number>(1.50);
+  const [ingredientEntries, setIngredientEntries] = useState<Array<{ name: string; percentage: number }>>([
+    { name: "", percentage: 100 }
+  ]);
   const [selectedIndications, setSelectedIndications] = useState<string[]>([]);
 
   const AVAILABLE_INDICATIONS = [
@@ -44,6 +49,26 @@ export default function CreateBatch() {
     "Diabetes Management",
     "Acid Reflux"
   ];
+
+  const handleAddIngredient = () => {
+    setIngredientEntries([...ingredientEntries, { name: "", percentage: 0 }]);
+  };
+
+  const handleRemoveIngredient = (index: number) => {
+    if (ingredientEntries.length > 1) {
+      setIngredientEntries(ingredientEntries.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleIngredientChange = (index: number, field: "name" | "percentage", value: string | number) => {
+    const updated = [...ingredientEntries];
+    if (field === "name") {
+      updated[index].name = value as string;
+    } else {
+      updated[index].percentage = Number(value);
+    }
+    setIngredientEntries(updated);
+  };
 
   // Workflow tracking states
   const [activeStep, setActiveStep] = useState<number>(0);
@@ -60,7 +85,22 @@ export default function CreateBatch() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!medicineName || !batchId || !manufactureDate || !expiryDate || quantity <= 0 || !ingredients.trim() || selectedIndications.length === 0) return;
+    if (!medicineName || !batchId || !manufactureDate || !expiryDate || quantity <= 0 || selectedIndications.length === 0) return;
+
+    // Validate ingredients entries
+    if (ingredientEntries.some(e => !e.name.trim())) {
+      setErrorMsg("Validation Error: All active ingredient names must be filled out.");
+      return;
+    }
+    if (ingredientEntries.some(e => e.percentage <= 0)) {
+      setErrorMsg("Validation Error: Ingredient percentage must be greater than 0%.");
+      return;
+    }
+    const totalPercent = ingredientEntries.reduce((sum, e) => sum + e.percentage, 0);
+    if (totalPercent > 100) {
+      setErrorMsg(`Validation Error: Total percentage of ingredients cannot exceed 100%. (Current total: ${totalPercent}%)`);
+      return;
+    }
 
     setErrorMsg("");
     setSubmitting(true);
@@ -100,6 +140,9 @@ export default function CreateBatch() {
 
       // 3. Save batch record in Firebase/Local Cloud database
       const indicationsString = selectedIndications.join(", ");
+      const ingredientsString = ingredientEntries.map(e => `${e.name.trim()} (${e.percentage}%)`).join(", ");
+      const ingredientPercentages = ingredientEntries.map(e => ({ name: e.name.trim(), percentage: e.percentage }));
+      
       await dbService.createBatch({
         batchId: batchId.trim(),
         medicineName: medicineName.trim(),
@@ -109,8 +152,10 @@ export default function CreateBatch() {
         expiryDate,
         quantity,
         blockchainHash: contractTxHash,
-        ingredients: ingredients.trim(),
-        indications: indicationsString
+        ingredients: ingredientsString,
+        ingredientPercentages,
+        indications: indicationsString,
+        wholesalePrice: wholesalePrice
       });
 
       // Step 4: Verification success
@@ -290,32 +335,92 @@ export default function CreateBatch() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                Batch Total Quantity (Units) *
-              </label>
-              <input
-                type="number"
-                required
-                min={1}
-                value={quantity}
-                onChange={(e) => setQuantity(parseInt(e.target.value))}
-                className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-blue-600 transition-colors font-semibold"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Batch Total Quantity (Units) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseInt(e.target.value))}
+                  className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Initial Wholesale Price ($ / unit) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={0.01}
+                  step="0.01"
+                  value={wholesalePrice}
+                  onChange={(e) => setWholesalePrice(parseFloat(e.target.value))}
+                  className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                Active Ingredients *
-              </label>
-              <textarea
-                required
-                placeholder="e.g. Amoxicillin Trihydrate, Magnesium Stearate, Silica"
-                value={ingredients}
-                onChange={(e) => setIngredients(e.target.value)}
-                rows={2}
-                className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-blue-600 transition-colors"
-              />
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Active Ingredients & Concentrations *
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAddIngredient}
+                  className="inline-flex items-center text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Ingredient
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {ingredientEntries.map((entry, index) => (
+                  <div key={index} className="flex gap-3 items-center">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Paracetamol"
+                        value={entry.name}
+                        onChange={(e) => handleIngredientChange(index, "name", e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors"
+                      />
+                    </div>
+                    <div className="w-28 relative">
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        max={100}
+                        placeholder="100"
+                        value={entry.percentage || ""}
+                        onChange={(e) => handleIngredientChange(index, "percentage", e.target.value)}
+                        className="w-full pl-4 pr-7 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                      />
+                      <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-slate-400 pointer-events-none font-bold">
+                        %
+                      </span>
+                    </div>
+                    {ingredientEntries.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveIngredient(index)}
+                        className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div>

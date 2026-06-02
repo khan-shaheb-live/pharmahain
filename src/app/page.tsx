@@ -29,6 +29,7 @@ export default function Home() {
   const [selectedIndications, setSelectedIndications] = useState<string[]>([]);
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDetailBatch, setSelectedDetailBatch] = useState<MedicineBatch | null>(null);
 
   const FILTER_INDICATIONS = [
     "Pain Relief",
@@ -104,7 +105,17 @@ export default function Home() {
         );
       });
     }
-    setFiltered(list);
+    const sortedList = [...list].sort((a, b) => {
+      const aIsSpecial = a.batchId === "BAT-77382-PZ" || a.batchId === "BAT-55421-MD";
+      const bIsSpecial = b.batchId === "BAT-77382-PZ" || b.batchId === "BAT-55421-MD";
+      if (aIsSpecial && !bIsSpecial) return -1;
+      if (!aIsSpecial && bIsSpecial) return 1;
+      if (aIsSpecial && bIsSpecial) {
+        return a.batchId === "BAT-77382-PZ" ? -1 : 1;
+      }
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+    setFiltered(sortedList);
   }, [searchQuery, selectedIndications, selectedIngredients, batches]);
 
   const getStatusColor = (status: string) => {
@@ -374,13 +385,21 @@ export default function Home() {
                         <p className="text-slate-400 text-[10px]">Registry Quantity</p>
                         <p className="font-extrabold text-slate-800 dark:text-slate-200">{b.quantity.toLocaleString()} units</p>
                       </div>
-                      <Link
-                        href={`/batches/${b.batchId}`}
-                        className="inline-flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md shadow-blue-500/10"
-                      >
-                        Trace Path
-                        <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                      </Link>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setSelectedDetailBatch(b)}
+                          className="inline-flex items-center px-2.5 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-xl font-bold transition-all cursor-pointer"
+                        >
+                          Details
+                        </button>
+                        <Link
+                          href={`/batches/${b.batchId}`}
+                          className="inline-flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md shadow-blue-500/10"
+                        >
+                          Trace Path
+                          <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -517,6 +536,111 @@ export default function Home() {
       </section>
 
       <Footer />
+
+      {/* View Details Modal */}
+      {selectedDetailBatch && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg glass-card p-6 rounded-2xl border border-card-border shadow-2xl space-y-6 animate-in zoom-in-95 duration-200 text-left">
+            
+            <div className="flex justify-between items-center border-b border-card-border/50 pb-3">
+              <h3 className="font-outfit text-base font-extrabold text-slate-900 dark:text-white flex items-center">
+                <ShieldCheck className="h-5 w-5 text-emerald-500 mr-2" />
+                Medicine Specifications & Custody
+              </h3>
+              <button
+                onClick={() => setSelectedDetailBatch(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-sm font-bold p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Medicine Name</span>
+                <h4 className="font-outfit text-lg font-black text-slate-950 dark:text-white leading-normal mt-0.5">
+                  {selectedDetailBatch.medicineName}
+                </h4>
+                <p className="text-xs text-slate-500 font-mono">Batch ID: {selectedDetailBatch.batchId}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs pt-2 border-t border-card-border/30">
+                <div>
+                  <span className="text-slate-400 font-bold block mb-0.5 uppercase tracking-wider text-[9px]">Registrant Manufacturer</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">{selectedDetailBatch.manufacturerName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-bold block mb-0.5 uppercase tracking-wider text-[9px]">Current Location / Owner</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">{selectedDetailBatch.currentOwnerName}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs pt-2 border-t border-card-border/30">
+                <div>
+                  <span className="text-slate-400 font-bold block mb-0.5 uppercase tracking-wider text-[9px]">Manufacture Date</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 block">{selectedDetailBatch.manufactureDate}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-bold block mb-0.5 uppercase tracking-wider text-[9px]">Expiry Date</span>
+                  <span className="font-semibold text-red-500 block">{selectedDetailBatch.expiryDate}</span>
+                </div>
+              </div>
+
+              {/* Ingredients and percentage concentration list */}
+              <div className="pt-3 border-t border-card-border/30 space-y-2.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Ingredients Concentration per Unit</span>
+                
+                {selectedDetailBatch.ingredientPercentages && selectedDetailBatch.ingredientPercentages.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedDetailBatch.ingredientPercentages.map((ing, i) => (
+                      <div key={i} className="space-y-1.5">
+                        <div className="flex justify-between text-xs font-semibold">
+                          <span className="text-slate-800 dark:text-slate-200">{ing.name}</span>
+                          <span className="text-blue-600 dark:text-blue-400 font-bold">{ing.percentage}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full animate-pulse"
+                            style={{ width: `${ing.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-xl text-xs text-slate-600 dark:text-slate-300">
+                    <p className="font-semibold">{selectedDetailBatch.ingredients || "No active ingredients specified."}</p>
+                    <p className="text-[10px] text-slate-400 mt-1 italic">Note: Specific ingredient concentration breakdowns are registered on newer batches.</p>
+                  </div>
+                )}
+              </div>
+
+              {selectedDetailBatch.indications && (
+                <div className="pt-3 border-t border-card-border/30 text-xs space-y-1">
+                  <span className="text-slate-400 font-bold block uppercase tracking-wider text-[9px]">Therapeutic Indications</span>
+                  <p className="text-slate-800 dark:text-slate-200 font-medium">{selectedDetailBatch.indications}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-card-border/50 flex justify-end space-x-3">
+              <button
+                onClick={() => setSelectedDetailBatch(null)}
+                className="px-4 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Close
+              </button>
+              <Link
+                href={`/batches/${selectedDetailBatch.batchId}`}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/10 inline-flex items-center font-semibold"
+              >
+                Trace Lifecycle
+                <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

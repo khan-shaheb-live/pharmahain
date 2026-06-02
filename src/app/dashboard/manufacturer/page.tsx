@@ -31,6 +31,7 @@ export default function ManufacturerDashboard() {
   const [activeTransferBatch, setActiveTransferBatch] = useState<MedicineBatch | null>(null);
   const [selectedDistributorId, setSelectedDistributorId] = useState("");
   const [transferNotes, setTransferNotes] = useState("");
+  const [transferPrice, setTransferPrice] = useState<number>(0);
   const [transferring, setTransferring] = useState(false);
   const [transferSuccess, setTransferSuccess] = useState(false);
 
@@ -62,6 +63,7 @@ export default function ManufacturerDashboard() {
     setActiveTransferBatch(batch);
     setTransferSuccess(false);
     setTransferNotes("");
+    setTransferPrice(batch.wholesalePrice || 1.50);
   };
 
   const handleInitiateTransfer = async (e: React.FormEvent) => {
@@ -85,7 +87,8 @@ export default function ManufacturerDashboard() {
         activeTransferBatch.batchId,
         selectedDistributorId,
         transferNotes,
-        blockchainTxHash
+        blockchainTxHash,
+        transferPrice
       );
 
       // Refresh dashboard batches list
@@ -208,6 +211,7 @@ export default function ManufacturerDashboard() {
                 <th className="px-6 py-3.5">Medicine Name</th>
                 <th className="px-6 py-3.5">Mfg Date</th>
                 <th className="px-6 py-3.5">Quantity</th>
+                <th className="px-6 py-3.5">Wholesale Price</th>
                 <th className="px-6 py-3.5">Status</th>
                 <th className="px-6 py-3.5">Actions</th>
               </tr>
@@ -231,6 +235,9 @@ export default function ManufacturerDashboard() {
                     </td>
                     <td className="px-6 py-4 font-medium">{b.manufactureDate}</td>
                     <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{b.quantity.toLocaleString()}</td>
+                    <td className="px-6 py-4 font-bold text-blue-600 dark:text-blue-400">
+                      {b.wholesalePrice ? `$${b.wholesalePrice.toFixed(2)}` : "N/A"}
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase ${getStatusColor(b.status)}`}>
                         {b.status}
@@ -328,6 +335,21 @@ export default function ManufacturerDashboard() {
                       <option value="">No active logistics partners registered</option>
                     )}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Wholesale Transaction Price ($ / unit) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0.01}
+                    step="0.01"
+                    value={transferPrice}
+                    onChange={(e) => setTransferPrice(parseFloat(e.target.value))}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors font-semibold"
+                  />
                 </div>
 
                 <div>
