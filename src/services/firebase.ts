@@ -14,11 +14,29 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Always initialize Firebase App and services
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+// Safe configuration check (e.g. to prevent crashes during build/Vercel pipelines)
+const isFirebaseConfigured = 
+  firebaseConfig.apiKey && 
+  firebaseConfig.apiKey !== "undefined" && 
+  firebaseConfig.apiKey.trim() !== "";
+
+let app: any;
+let auth: any;
+let db: any;
+let storage: any;
+
+if (isFirebaseConfigured) {
+  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
+} else {
+  console.warn("WARNING: Firebase env variables are missing or invalid. Initializing mock instances to prevent build failure.");
+  app = {} as any;
+  auth = {} as any;
+  db = {} as any;
+  storage = {} as any;
+}
 
 let analytics: any = null;
 if (typeof window !== "undefined") {
