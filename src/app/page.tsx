@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import { dbService, MedicineBatch } from "../services/db";
+import { BarcodePreview } from "../components/BarcodePreview";
 import { 
   ShieldCheck, 
   Activity, 
@@ -16,36 +17,106 @@ import {
   CheckCircle,
   Building2,
   Lock,
-  ArrowRight
+  ArrowRight,
+  ChevronRight,
+  Building
 } from "lucide-react";
 
 export default function Home() {
+  const [batches, setBatches] = useState<MedicineBatch[]>([]);
+  const [filtered, setFiltered] = useState<MedicineBatch[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<MedicineBatch[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [selectedIndications, setSelectedIndications] = useState<string[]>([]);
+  const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
+  const FILTER_INDICATIONS = [
+    "Pain Relief",
+    "Fever Reduction",
+    "Acid Reflux",
+    "Bacterial Infections",
+    "Allergy Relief",
+    "Cough & Cold",
+    "Diabetes Management",
+    "High Blood Pressure",
+    "Heart Failure",
+    "Inflammation"
+  ];
 
-    setIsSearching(true);
-    setHasSearched(true);
-    try {
-      const all = await dbService.getAllBatches();
-      const cleanQuery = searchQuery.toLowerCase().trim();
-      const filtered = all.filter(
+  const FILTER_INGREDIENTS = [
+    "Paracetamol",
+    "Omeprazole",
+    "Esomeprazole",
+    "Pantoprazole",
+    "Cefixime",
+    "Azithromycin",
+    "Cetirizine",
+    "Fexofenadine",
+    "Metformin",
+    "Losartan",
+    "Aspirin",
+    "Montelukast",
+    "Calcium Carbonate",
+    "Pregabalin"
+  ];
+
+  useEffect(() => {
+    const loadBatches = async () => {
+      try {
+        const all = await dbService.getAllBatches();
+        setBatches(all);
+        setFiltered(all);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadBatches();
+  }, []);
+
+  useEffect(() => {
+    let list = batches;
+    if (searchQuery.trim()) {
+      const clean = searchQuery.trim().toLowerCase();
+      list = list.filter(
         (b) =>
-          b.medicineName.toLowerCase().includes(cleanQuery) ||
-          b.batchId.toLowerCase().includes(cleanQuery) ||
-          (b.ingredients && b.ingredients.toLowerCase().includes(cleanQuery)) ||
-          (b.indications && b.indications.toLowerCase().includes(cleanQuery))
+          b.batchId.toLowerCase().includes(clean) ||
+          b.medicineName.toLowerCase().includes(clean) ||
+          b.manufacturerName.toLowerCase().includes(clean) ||
+          (b.ingredients && b.ingredients.toLowerCase().includes(clean)) ||
+          (b.indications && b.indications.toLowerCase().includes(clean))
       );
-      setSearchResults(filtered);
-    } catch (err) {
-      console.error("Search failed", err);
-    } finally {
-      setIsSearching(false);
+    }
+    if (selectedIndications.length > 0) {
+      list = list.filter((b) => {
+        if (!b.indications) return false;
+        const bInds = b.indications.split(", ").map(x => x.toLowerCase());
+        return selectedIndications.some(sel => bInds.includes(sel.toLowerCase()));
+      });
+    }
+    if (selectedIngredients.length > 0) {
+      list = list.filter((b) => {
+        if (!b.ingredients) return false;
+        const bIngs = b.ingredients.split(", ").map(x => x.toLowerCase());
+        return selectedIngredients.some(sel => 
+          bIngs.some(ing => ing.includes(sel.toLowerCase()) || sel.toLowerCase().includes(ing))
+        );
+      });
+    }
+    setFiltered(list);
+  }, [searchQuery, selectedIndications, selectedIngredients, batches]);
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "Pending":
+        return "bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-500/10";
+      case "In Transit":
+        return "bg-amber-500/10 text-amber-500 border border-amber-500/20";
+      case "Delivered":
+        return "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20";
+      default:
+        return "bg-slate-100 text-slate-500";
     }
   };
 
@@ -125,103 +196,206 @@ export default function Home() {
       </section>
 
       {/* Interactive Medicine Search Section */}
-      <section className="max-w-4xl mx-auto px-4 pb-20 w-full">
-        <div className="glass-card p-8 rounded-3xl border border-card-border shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-600 to-indigo-500"></div>
-          
-          <div className="text-center space-y-2">
-            <h2 className="font-outfit text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
-              Instant Medicine Registry Search
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-lg mx-auto">
-              Search by commercial name (e.g. Napa, Seclo), active ingredient (e.g. Paracetamol), or therapeutic indication/disease (e.g. Fever, Acid Reflux).
-            </p>
+      <section className="max-w-7xl mx-auto px-4 pb-20 w-full space-y-8">
+        <div className="text-center space-y-2">
+          <h2 className="font-outfit text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
+            Search Decentralized Medicine Registries
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-lg mx-auto">
+            Direct real-time access to the blockchain-verified medicine provenance catalogue.
+          </p>
+        </div>
+
+        {/* Filter & Card Grid Layout */}
+        <div className="flex flex-col lg:flex-row gap-8 items-start w-full">
+          {/* Left Sidebar Filter Column */}
+          <div className="w-full lg:w-64 flex-shrink-0 space-y-6">
+            <div className="glass-card p-6 rounded-2xl border border-card-border shadow-md space-y-6">
+              <div className="flex justify-between items-center pb-4 border-b border-card-border/50">
+                <h3 className="font-outfit text-sm font-bold text-slate-900 dark:text-white flex items-center">
+                  <Activity className="h-4 w-4 mr-2 text-blue-500" />
+                  Filter Search
+                </h3>
+                {(selectedIndications.length > 0 || selectedIngredients.length > 0 || searchQuery.trim()) && (
+                  <button
+                    onClick={() => {
+                      setSelectedIndications([]);
+                      setSelectedIngredients([]);
+                      setSearchQuery("");
+                    }}
+                    className="text-[10px] font-bold text-red-500 hover:text-red-600 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              {/* Text Search Input inside sidebar */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Keywords</span>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search name, use..."
+                    className="w-full pl-8 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-blue-600 transition-colors"
+                  />
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                </div>
+              </div>
+
+              {/* Indications Checkboxes */}
+              <div className="space-y-3 pt-4 border-t border-card-border/30">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Diseases / Indications</span>
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                  {FILTER_INDICATIONS.map((ind) => {
+                    const checked = selectedIndications.includes(ind);
+                    return (
+                      <label key={ind} className="flex items-center space-x-2.5 text-xs font-semibold text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            if (checked) {
+                              setSelectedIndications(selectedIndications.filter((x) => x !== ind));
+                            } else {
+                              setSelectedIndications([...selectedIndications, ind]);
+                            }
+                          }}
+                          className="h-3.5 w-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 dark:border-slate-800"
+                        />
+                        <span>{ind}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Ingredients Checkboxes */}
+              <div className="space-y-3 pt-4 border-t border-card-border/30">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active Ingredients</span>
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                  {FILTER_INGREDIENTS.map((ing) => {
+                    const checked = selectedIngredients.includes(ing);
+                    return (
+                      <label key={ing} className="flex items-center space-x-2.5 text-xs font-semibold text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            if (checked) {
+                              setSelectedIngredients(selectedIngredients.filter((x) => x !== ing));
+                            } else {
+                              setSelectedIngredients([...selectedIngredients, ing]);
+                            }
+                          }}
+                          className="h-3.5 w-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 dark:border-slate-800"
+                        />
+                        <span>{ing}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <form onSubmit={handleSearch} className="mt-8 max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                required
-                placeholder="Search name, ingredients, or diseases (e.g. Paracetamol, Fever)..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-11 pr-4 py-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-blue-600 font-medium tracking-wide transition-colors"
-              />
-              <Search className="absolute left-4 top-4 h-4.5 w-4.5 text-slate-400" />
-            </div>
-            <button
-              type="submit"
-              className="px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-            >
-              Search Registry
-            </button>
-          </form>
+          {/* Right Medicine Cards Grid Column */}
+          <div className="flex-1 w-full">
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="h-64 bg-slate-200 dark:bg-slate-800 rounded-2xl" />
+                ))}
+              </div>
+            ) : filtered.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filtered.map((b) => (
+                  <div 
+                    key={b.batchId} 
+                    className="glass-card rounded-2xl border border-card-border overflow-hidden shadow-md hover:shadow-xl hover:scale-[1.01] transition-all flex flex-col justify-between"
+                  >
+                    {/* Top status & barcode */}
+                    <div className="p-5 space-y-4">
+                      <div className="flex justify-between items-start">
+                        <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase ${getStatusColor(b.status)}`}>
+                          {b.status}
+                        </span>
+                        <span className="font-mono text-[10px] font-bold text-slate-400">
+                          {b.batchId}
+                        </span>
+                      </div>
 
-          {/* Search Results Display */}
-          {hasSearched && (
-            <div className="mt-8 border-t border-card-border/50 pt-6 space-y-4 animate-in fade-in duration-300">
-              <h3 className="font-outfit text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Registry Matches ({searchResults.length})
-              </h3>
-              
-              {isSearching ? (
-                <div className="py-8 text-center space-y-3">
-                  <div className="h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                  <p className="text-xs text-slate-400 font-semibold animate-pulse">Searching decentralized database registries...</p>
-                </div>
-              ) : searchResults.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[380px] overflow-y-auto pr-1">
-                  {searchResults.map((b) => (
-                    <div key={b.batchId} className="p-4 rounded-xl border border-slate-100 dark:border-slate-900 bg-slate-50/50 dark:bg-slate-900/20 hover:border-blue-500/30 transition-all flex flex-col justify-between">
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100">{b.medicineName}</h4>
-                            <p className="text-[10px] text-slate-400 mt-0.5">Mfg: {b.manufacturerName}</p>
-                          </div>
-                          <span className="font-mono text-[9px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded">
-                            {b.batchId}
-                          </span>
-                        </div>
+                      {/* Title and Manufacturer */}
+                      <div>
+                        <h3 className="font-outfit text-base font-extrabold text-slate-900 dark:text-white leading-snug">
+                          {b.medicineName}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center">
+                          <Building2 className="h-3.5 w-3.5 mr-1 text-slate-400" />
+                          {b.manufacturerName}
+                        </p>
+                      </div>
 
-                        {b.ingredients && (
-                          <p className="text-xs text-slate-600 dark:text-slate-400">
-                            <span className="font-bold text-slate-500">Ingredients:</span> {b.ingredients}
+                      {/* Barcode representation */}
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 flex justify-center items-center">
+                        <BarcodePreview value={b.batchId} />
+                      </div>
+
+                      {/* Ingredients */}
+                      {b.ingredients && (
+                        <div className="space-y-1 text-xs">
+                          <span className="text-slate-400 font-semibold uppercase tracking-wider block text-[9px]">Ingredients</span>
+                          <p className="text-slate-700 dark:text-slate-300 font-semibold truncate">
+                            {b.ingredients}
                           </p>
-                        )}
+                        </div>
+                      )}
 
-                        {b.indications && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {b.indications.split(", ").map((ind) => (
-                              <span key={ind} className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50">
+                      {/* Indications / Uses */}
+                      {b.indications && (
+                        <div className="space-y-1 text-xs">
+                          <span className="text-slate-400 font-semibold uppercase tracking-wider block text-[9px]">Indications / Uses</span>
+                          <div className="flex flex-wrap gap-1.5 pt-0.5">
+                            {b.indications.split(", ").slice(0, 3).map((ind) => (
+                              <span key={ind} className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100/50 dark:border-blue-900/50">
                                 {ind}
                               </span>
                             ))}
                           </div>
-                        )}
-                      </div>
-
-                      <div className="pt-4 mt-2 border-t border-card-border/30 flex justify-between items-center text-[10px]">
-                        <span className="text-slate-400">Status: <span className="font-bold text-emerald-500">{b.status}</span></span>
-                        <Link 
-                          href={`/batches/${b.batchId}`}
-                          className="font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 inline-flex items-center"
-                        >
-                          Verify Ledger Path ➔
-                        </Link>
-                      </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center bg-slate-50 dark:bg-slate-900/10 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-                  <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">No registered medicines found matching your query.</p>
-                  <p className="text-xs text-slate-400 mt-1">Double check spelling or try searching generic active ingredients like "Paracetamol".</p>
-                </div>
-              )}
-            </div>
-          )}
+
+                    {/* Footer tracking button */}
+                    <div className="bg-slate-50/50 dark:bg-slate-900/10 px-5 py-4 border-t border-card-border/50 flex justify-between items-center text-xs">
+                      <div>
+                        <p className="text-slate-400 text-[10px]">Registry Quantity</p>
+                        <p className="font-extrabold text-slate-800 dark:text-slate-200">{b.quantity.toLocaleString()} units</p>
+                      </div>
+                      <Link
+                        href={`/batches/${b.batchId}`}
+                        className="inline-flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md shadow-blue-500/10"
+                      >
+                        Trace Path
+                        <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-16 text-center bg-white dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  No registered medicines found matching current filters.
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Try clearing sidebar criteria or searching for general active ingredients.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
