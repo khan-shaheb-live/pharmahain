@@ -1,4 +1,6 @@
 import { ethers } from "ethers";
+import { dbService } from "./db";
+
 
 // ABI of our Solidity Smart Contract
 export const PHARMA_CHAIN_ABI = [
@@ -378,9 +380,8 @@ export const blockchainService = {
         }
       }
     } else {
-      // Sandbox Simulation: Look up in our local batches DB
-      const batches = JSON.parse(localStorage.getItem("pc_batches") || "[]");
-      const batch = batches.find((b: any) => b.batchId.toUpperCase() === batchId.toUpperCase());
+      // Sandbox Simulation: Look up in our Firestore database
+      const batch = await dbService.getBatch(batchId);
       
       if (batch) {
         // Record scan event

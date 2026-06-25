@@ -219,6 +219,7 @@ export const dbService = {
   // ==========================================
 
   async createBatch(batchData: Omit<MedicineBatch, "qrCodeUrl" | "currentOwnerId" | "currentOwnerName" | "status" | "createdAt"> & { wholesalePrice?: number }): Promise<MedicineBatch> {
+    const cleanBatchId = batchData.batchId.trim().toUpperCase();
     const defaultData = {
       currentOwnerId: batchData.manufacturerId,
       currentOwnerName: batchData.manufacturerName,
@@ -229,6 +230,7 @@ export const dbService = {
 
     const newBatch: MedicineBatch = {
       ...batchData,
+      batchId: cleanBatchId,
       ...defaultData,
       wholesalePrice: batchData.wholesalePrice || 0
     };
@@ -241,7 +243,7 @@ export const dbService = {
   },
 
   async getBatch(batchId: string): Promise<MedicineBatch | null> {
-    const docRef = doc(db, "medicine_batches", batchId);
+    const docRef = doc(db, "medicine_batches", batchId.trim().toUpperCase());
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? (docSnap.data() as MedicineBatch) : null;
   },
@@ -277,7 +279,8 @@ export const dbService = {
     blockchainTxHash: string,
     wholesalePrice?: number
   ): Promise<OwnershipTransfer> {
-    const batch = await this.getBatch(batchId);
+    const cleanBatchId = batchId.trim().toUpperCase();
+    const batch = await this.getBatch(cleanBatchId);
     if (!batch) throw new Error("Batch not found.");
 
     const users = await this.getAllUsers();
@@ -287,7 +290,7 @@ export const dbService = {
     const transferId = "TX_" + Math.random().toString(36).substring(2, 11);
     const newTransfer: OwnershipTransfer = {
       transferId,
-      batchId,
+      batchId: cleanBatchId,
       medicineName: batch.medicineName,
       fromUserId: batch.currentOwnerId,
       fromUserName: batch.currentOwnerName,
@@ -304,7 +307,7 @@ export const dbService = {
     await setDoc(doc(db, "ownership_transfers", transferId), newTransfer);
     
     // 2. Update Batch Assignee/Status in Firestore
-    const batchRef = doc(db, "medicine_batches", batchId);
+    const batchRef = doc(db, "medicine_batches", cleanBatchId);
     const updateData: any = {
       status: "In Transit",
       wholesalePrice: wholesalePrice || batch.wholesalePrice || 0
@@ -376,7 +379,8 @@ export const dbService = {
   // ==========================================
 
   async logVerification(batchId: string, result: boolean, onChain: boolean): Promise<QRVerification> {
-    const batch = await this.getBatch(batchId);
+    const cleanBatchId = batchId.trim().toUpperCase();
+    const batch = await this.getBatch(cleanBatchId);
     
     const ips = ["192.168.1.5", "172.16.54.21", "204.99.12.87", "98.122.5.34", "182.203.45.19"];
     const customerIp = ips[Math.floor(Math.random() * ips.length)];
@@ -384,7 +388,7 @@ export const dbService = {
 
     const newLog: QRVerification = {
       verificationId,
-      batchId,
+      batchId: cleanBatchId,
       medicineName: batch ? batch.medicineName : "Unknown/Fake Medicine",
       manufacturerName: batch ? batch.manufacturerName : "Counterfeit Product",
       customerIp,
@@ -450,7 +454,8 @@ export const dbService = {
   // ==========================================
 
   async registerPOSSale(saleData: Omit<POSSale, "saleId" | "saleDate" | "totalPrice">): Promise<POSSale> {
-    const batch = await this.getBatch(saleData.batchId);
+    const cleanBatchId = saleData.batchId.trim().toUpperCase();
+    const batch = await this.getBatch(cleanBatchId);
     if (!batch) throw new Error("Batch not found.");
     if (batch.quantity < saleData.quantity) {
       throw new Error(`Insufficient stock. Only ${batch.quantity} units available.`);
@@ -460,6 +465,7 @@ export const dbService = {
     const totalPrice = Number((saleData.quantity * saleData.retailUnitPrice).toFixed(2));
     const newSale: POSSale = {
       ...saleData,
+      batchId: cleanBatchId,
       saleId,
       totalPrice,
       saleDate: new Date().toISOString()
@@ -469,7 +475,7 @@ export const dbService = {
     await setDoc(doc(db, "pos_sales", saleId), newSale);
 
     // 2. Decrement Batch stock
-    const batchRef = doc(db, "medicine_batches", saleData.batchId);
+    const batchRef = doc(db, "medicine_batches", cleanBatchId);
     await updateDoc(batchRef, {
       quantity: batch.quantity - saleData.quantity,
       retailPrice: saleData.retailUnitPrice
